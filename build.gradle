@@ -122,12 +122,12 @@ jar {
 sourcesJar {
   manifest {
     attributes(
-      // Add the needed OSGI attributes
-      "Bundle-ManifestVersion": "2",
-      "Bundle-Name": "${project.jar.manifest.name} Source",
-      "Bundle-Version": project.jar.manifest.version,
-      "Eclipse-SourceBundle": "${project.jar.manifest.symbolicName};version=\"${project.jar.manifest.version}\";roots:=\".\"",
-      "Bundle-SymbolicName": "${project.jar.manifest.symbolicName}.source"
+            // Add the needed OSGI attributes
+            "Bundle-ManifestVersion": "2",
+            "Bundle-Name": "${project.jar.manifest.name} Source",
+            "Bundle-Version": project.jar.manifest.version,
+            "Eclipse-SourceBundle": "${project.jar.manifest.symbolicName};version=\"${project.jar.manifest.version}\";roots:=\".\"",
+            "Bundle-SymbolicName": "${project.jar.manifest.symbolicName}.source"
     )
   }
 }
@@ -252,32 +252,41 @@ if (project.hasProperty("bintrayUsername") && project.hasProperty("bintrayApiKey
 }
 
 jacocoTestReport {
-    reports {
-        xml.enabled true
-        html.enabled true
-    }
+  reports {
+    xml.enabled true
+    html.enabled true
+  }
 }
 
 
 task buildItestImage(type: DockerBuildImage) {
-    inputDir = file('src/itest/docker-image')
-    images.add('sshj/sshd-itest:latest')
+  inputDir = file('src/itest/docker-image')
+  images.add('sshj/sshd-itest:latest')
 }
 
 task createItestContainer(type: DockerCreateContainer) {
-    dependsOn buildItestImage
-    targetImageId buildItestImage.getImageId()
-    hostConfig.portBindings = ['2222:22']
-    hostConfig.autoRemove = true
+  dependsOn buildItestImage
+  targetImageId buildItestImage.getImageId()
+  hostConfig.portBindings = ['2222:22']
+  hostConfig.autoRemove = true
 }
 
 task startItestContainer(type: DockerStartContainer) {
-    dependsOn createItestContainer
-    targetContainerId createItestContainer.getContainerId()
+  dependsOn createItestContainer
+  targetContainerId createItestContainer.getContainerId()
+}
+
+task logItestContainer(type: DockerLogsContainer) {
+  dependsOn createItestContainer
+  targetContainerId createItestContainer.getContainerId()
+  showTimestamps = true
+  stdErr = true
+  stdOut = true
+  tailAll = true
 }
 
 task stopItestContainer(type: DockerStopContainer) {
-    targetContainerId createItestContainer.getContainerId()
+  targetContainerId createItestContainer.getContainerId()
 }
 
 task forkedUploadRelease(type: GradleBuild) {
@@ -287,6 +296,7 @@ task forkedUploadRelease(type: GradleBuild) {
 
 project.tasks.integrationTest.dependsOn(startItestContainer)
 project.tasks.integrationTest.finalizedBy(stopItestContainer)
+project.tasks.stopItestContainer.dependsOn(logItestContainer)
 
 project.tasks.release.dependsOn([project.tasks.integrationTest, project.tasks.build])
 project.tasks.release.finalizedBy(project.tasks.forkedUploadRelease)
