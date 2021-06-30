@@ -17,13 +17,13 @@ package net.schmizz.sshj.transport.verification;
 
 import com.hierynomus.sshj.common.KeyAlgorithm;
 import com.hierynomus.sshj.transport.verification.KnownHostMatchers;
+import com.hierynomus.sshj.userauth.certificate.Certificate;
 import net.schmizz.sshj.common.*;
 import org.slf4j.Logger;
 
 import java.io.*;
 import java.math.BigInteger;
-import java.security.KeyFactory;
-import java.security.PublicKey;
+import java.security.*;
 import java.security.spec.RSAPublicKeySpec;
 import java.util.ArrayList;
 import java.util.List;
@@ -387,11 +387,23 @@ public class OpenSSHKnownHosts
 
         @Override
         public boolean appliesTo(KeyType type, String host) throws IOException {
-            return this.type == type && matcher.match(host);
+            // TODO better check for certificates.
+            return (this.type == type || (marker == Marker.CA_CERT && type.getParent() != null)) && matcher.match(host);
         }
 
         @Override
         public boolean verify(PublicKey key) throws IOException {
+            if (marker == Marker.CA_CERT && key instanceof Certificate<?>) {
+                try {
+                    final Signature signature = Signature.getInstance(this.key.getAlgorithm());
+                    signature.initVerify(this.key);
+                    signature.verify(((Certificate<?>) key).getSignature());
+                    return true;
+                }
+                catch (GeneralSecurityException e) {
+                    return false;
+                }
+            }
             return getKeyString(key).equals(getKeyString(this.key)) && marker != Marker.REVOKED;
         }
 

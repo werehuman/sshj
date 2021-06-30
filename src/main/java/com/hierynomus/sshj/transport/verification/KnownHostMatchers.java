@@ -23,6 +23,7 @@ import net.schmizz.sshj.transport.mac.MAC;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import com.hierynomus.sshj.transport.mac.Macs;
@@ -59,6 +60,10 @@ public class KnownHostMatchers {
 
         @Override
         public boolean match(String hostname) {
+            final Matcher matcher = Pattern.compile("^\\[([^]]+)]:\\d+").matcher(hostname);
+            if (matcher.matches()) {
+                return host.equals(matcher.group(1));
+            }
             return host.equals(hostname);
         }
     }
