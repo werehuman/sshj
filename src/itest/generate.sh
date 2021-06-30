@@ -44,3 +44,12 @@ for ca_algo in ecdsa rsa ed25519; do
     done
   done
 done
+
+for key_algo_pair in "${key_algo_pairs[@]}"; do
+  key_algo="${key_algo_pair/_*/}"
+  bits="${key_algo_pair/*_/}"
+
+  host_key="docker-image/test-container/host_keys/ssh_host_${key_algo_pair}_key"
+  generate "$host_key" -N '' -t "$key_algo" -b "$bits" -C "$(basename "$host_key")"
+  generate "${host_key}-cert.pub" -h -s "resources/keyfiles/certificates/CA_rsa.pem" -I "$(basename "$host_key")" -n sshj "${host_key}.pub"
+done
