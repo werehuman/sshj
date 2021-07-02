@@ -51,5 +51,6 @@ for key_algo_pair in "${key_algo_pairs[@]}"; do
 
   host_key="docker-image/test-container/host_keys/ssh_host_${key_algo_pair}_key"
   generate "$host_key" -N '' -t "$key_algo" -b "$bits" -C "$(basename "$host_key")"
+  # TODO Check hostname on the client side.
   generate "${host_key}-cert.pub" -h -s "resources/keyfiles/certificates/CA_rsa.pem" -I "$(basename "$host_key")" -n sshj "${host_key}.pub"
 done
