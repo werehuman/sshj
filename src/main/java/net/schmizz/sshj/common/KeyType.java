@@ -490,9 +490,7 @@ public enum KeyType {
          */
         public static boolean verifyHostCertificate(byte[] certRaw, Certificate<?> cert)
                 throws Buffer.BufferException, SSHRuntimeException {
-            final Buffer.PlainBuffer signatureBuffer = new Buffer.PlainBuffer(cert.getSignature());
-            String signatureType = signatureBuffer.readString();
-
+            String signatureType = new Buffer.PlainBuffer(cert.getSignature()).readString();
             final Signature signature = Factory.Named.Util.create(ALL_SIGNATURES, signatureType);
             if (signature == null) {
                 return false;
@@ -502,7 +500,7 @@ public enum KeyType {
 
             signature.initVerify(new Buffer.PlainBuffer(cert.getSignatureKey()).readPublicKey());
             signature.update(certRaw, 0, certRaw.length - cert.getSignature().length - 4);
-            return signature.verify(signatureBuffer.readBytes());
+            return signature.verify(cert.getSignature());
 
 //            final String javaSignatureAlgo;
 //            switch (signatureType) {

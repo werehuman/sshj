@@ -92,9 +92,23 @@ public abstract class AbstractDHG extends AbstractDH {
                                          "KeyExchange signature verification failed");
 
         if (hostKey instanceof Certificate<?>) {
+            final Certificate<?> hostKey = (Certificate<?>) this.hostKey;
+            String signatureType, caKeyType;
+            try {
+                signatureType = new Buffer.PlainBuffer(hostKey.getSignature()).readString();
+            } catch (Buffer.BufferException e) {
+                signatureType = null;
+            }
+            try {
+                caKeyType = new Buffer.PlainBuffer(hostKey.getSignatureKey()).readString();
+            } catch (Buffer.BufferException e) {
+                caKeyType = null;
+            }
+            log.debug("Verifying signature of the key with type {} (signature type {}, CA key type {})",
+                      hostKey.getType(), signatureType, caKeyType);
             // TODO log types, signature algorithms, etc.
             try {
-                if (!KeyType.CertUtils.verifyHostCertificate(K_S, (Certificate<?>) hostKey)) {
+                if (!KeyType.CertUtils.verifyHostCertificate(K_S, hostKey)) {
                     throw new TransportException(DisconnectReason.KEY_EXCHANGE_FAILED,
                                                  "KeyExchange certificate signature verification failed");
                 }

@@ -113,27 +113,27 @@ public class OpenSSHKnownHosts
 
         final String adjustedHostname = (port != 22) ? "[" + hostname + "]:" + port : hostname;
 
-        if (key instanceof Certificate) {
-            boolean ok = false;
-            for (String principal : ((Certificate<?>) key).getValidPrincipals()) {
-                ok = hostname.equals(principal) || adjustedHostname.equals(principal);
-                if (ok) {
-                    break;
-                }
-            }
-            if (!ok) {
-                if (log.isDebugEnabled()) {
-                    StringBuilder joinedPrincipals = new StringBuilder();
-                    String delimiter = "";
-                    for (String principal : ((Certificate<?>) key).getValidPrincipals()) {
-                        joinedPrincipals.append(delimiter).append(principal);
-                        delimiter = ", ";
-                    }
-                    log.debug("Principals [{}] don't match {}:{}", joinedPrincipals, hostname, port);
-                }
-                return false;
-            }
-        }
+//        if (key instanceof Certificate) {
+//            boolean ok = false;
+//            for (String principal : ((Certificate<?>) key).getValidPrincipals()) {
+//                ok = hostname.equals(principal) || adjustedHostname.equals(principal);
+//                if (ok) {
+//                    break;
+//                }
+//            }
+//            if (!ok) {
+//                if (log.isDebugEnabled()) {
+//                    StringBuilder joinedPrincipals = new StringBuilder();
+//                    String delimiter = "";
+//                    for (String principal : ((Certificate<?>) key).getValidPrincipals()) {
+//                        joinedPrincipals.append(delimiter).append(principal);
+//                        delimiter = ", ";
+//                    }
+//                    log.debug("Principals [{}] don't match {}:{}", joinedPrincipals, hostname, port);
+//                }
+//                return false;
+//            }
+//        }
 
         boolean foundApplicableHostEntry = false;
         for (KnownHostEntry e : entries) {
@@ -323,94 +323,14 @@ public class OpenSSHKnownHosts
 
         @Override
         public boolean appliesTo(KeyType type, String host) throws IOException {
-            return (this.type == type || (marker == Marker.CA_CERT && type.getParent() == this.type)) && matcher.match(host);
+            return (this.type == type || (marker == Marker.CA_CERT && type.getParent() != null)) && matcher.match(host);
         }
 
         @Override
         public boolean verify(PublicKey key) throws IOException {
-            if (marker == Marker.CA_CERT && key instanceof Certificate<?> && key.getAlgorithm().equals(this.key.getAlgorithm())) {
-//                    ((Certificate<?>) key).getSignatureKey().length == this.key.getEncoded().length &&
-//                    ByteArrayUtils.equals(((Certificate<?>) key).getSignatureKey(), 0,
-//                                          this.key.getEncoded(), 0, this.key.getEncoded().length)) {
-
-                return true;
-
-
-//                try {
-//                    // See sshkey_cert_check_authority, sshkey_check_cert_sigtype in OpenSSH.
-//                    // TODO wildcard_principals
-//                    PublicKey signatureKey = new Buffer.PlainBuffer(((Certificate<?>) key).getSignatureKey()).readPublicKey();
-//
-//                    if (!getKeyString(signatureKey).equals(getKeyString(this.key))) {
-//                        return false;
-//                    }
-//
-//                    final Buffer.PlainBuffer signatureBuffer = new Buffer.PlainBuffer(((Certificate<?>) key).getSignature());
-//                    String signatureType = signatureBuffer.readString();
-//
-//                    final String javaSignatureAlgo;
-//                    switch (signatureType) {
-//                        case "rsa-sha2-512":
-//                            javaSignatureAlgo = "SHA512withRSA";
-//                            break;
-//                        default:
-//                            return false;
-//                    }
-//
-//                    final Signature signature = Signature.getInstance(javaSignatureAlgo);
-//                    signature.initVerify(this.key);
-//
-//                    final Buffer<?> buf = new Buffer.PlainBuffer();
-//                    Certificate<PublicKey> certificate = (Certificate<PublicKey>) key;
-//                    buf.putString(KeyType.fromKey(key).toString());
-//                    buf.putString(new Buffer.PlainBuffer().putPublicKey(key).getCompactData());
-//                    //buf.putBytes(certificate.getNonce());
-//                    type.writePubKeyContentsIntoBuffer(certificate.getKey(), buf);
-//                    buf.putUInt64(certificate.getSerial())
-//                            .putUInt32(certificate.getType())
-//                            .putString(certificate.getId())
-//                            .putBytes(packList(certificate.getValidPrincipals()))
-//                            .putUInt64(epochFromDate(certificate.getValidAfter()))
-//                            .putUInt64(epochFromDate(certificate.getValidBefore()))
-//                            .putBytes(packMap(certificate.getCritOptions()))
-//                            .putBytes(packMap(certificate.getExtensions()))
-//                            .putString("") // reserved
-//                            .putBytes(certificate.getSignatureKey());
-//
-//                    signature.update(buf.array(), buf.rpos(), buf.available());
-//                    final boolean verify = signature.verify(signatureBuffer.array(), signatureBuffer.rpos(), signatureBuffer.available() - 4);
-//                    return verify;
-////
-////                    Signature signature;
-////                    switch (type) {
-////                        case RSA:
-////                            signature = new SignatureRSA.FactorySSHRSA().create();
-////                            break;
-////                        default:
-////                            throw new UnsupportedEncodingException();
-////                    }
-////
-////                    signature.initVerify(this.key);
-////                    final Buffer<?> buf = KeyType.CertUtils.getBufferForSignatureVerify(key, this.type);
-////                    signature.update(buf.array(), buf.rpos(), buf.available());
-////                    signature.verify(((Certificate<?>) key).getSignature());
-//                } catch (GeneralSecurityException | SSHRuntimeException | Buffer.BufferException err) {
-//                    log.debug("Failed to verify key with type {}", this.key.getAlgorithm(), err);
-//                    return false;
-//                }
-
-//                try {
-//                    final Signature signature = Signature.getInstance(this.key.getAlgorithm());
-//                    signature.initVerify(this.key);
-//                    final Buffer<?> buf = KeyType.CertUtils.getBufferForSignatureVerify(key, this.type);
-//                    signature.update(buf.array(), 0, buf.available());
-//                    signature.verify(((Certificate<?>) key).getSignature());
-//                    return true;
-//                }
-//                catch (GeneralSecurityException e) {
-//                    log.debug("Failed to verify key with type {}", this.key.getAlgorithm(), e);
-//                    return false;
-//                }
+            if (marker == Marker.CA_CERT && key instanceof Certificate<?>) {
+                final PublicKey caKey = new Buffer.PlainBuffer(((Certificate<?>) key).getSignatureKey()).readPublicKey();
+                return this.type == KeyType.fromKey(caKey) && getKeyString(caKey).equals(getKeyString(this.key));
             }
             return getKeyString(key).equals(getKeyString(this.key)) && marker != Marker.REVOKED;
         }
