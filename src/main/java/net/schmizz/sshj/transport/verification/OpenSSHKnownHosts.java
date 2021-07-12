@@ -23,10 +23,15 @@ import org.slf4j.Logger;
 
 import java.io.*;
 import java.math.BigInteger;
-import java.security.*;
+import java.security.GeneralSecurityException;
+import java.security.KeyFactory;
+import java.security.PublicKey;
+import java.security.Signature;
 import java.security.spec.RSAPublicKeySpec;
 import java.util.ArrayList;
 import java.util.List;
+
+import static net.schmizz.sshj.common.KeyType.CertUtils.*;
 
 /**
  * A {@link HostKeyVerifier} implementation for a {@code known_hosts} file i.e. in the format used by OpenSSH.
@@ -36,15 +41,15 @@ import java.util.List;
 public class OpenSSHKnownHosts
         implements HostKeyVerifier {
 
+    private static final String LS = System.getProperty("line.separator");
     protected final Logger log;
-
     protected final File khFile;
     protected final List<KnownHostEntry> entries = new ArrayList<KnownHostEntry>();
+
 
     public OpenSSHKnownHosts(Reader reader) throws IOException {
         this(reader, LoggerFactory.DEFAULT);
     }
-
 
     public OpenSSHKnownHosts(File khFile)
             throws IOException {
@@ -72,6 +77,11 @@ public class OpenSSHKnownHosts
         readEntries(br);
     }
 
+    public static File detectSSHDir() {
+        final File sshDir = new File(System.getProperty("user.home"), ".ssh");
+        return sshDir.exists() ? sshDir : null;
+    }
+
     private void readEntries(BufferedReader br) throws IOException {
         final EntryFactory entryFactory = new EntryFactory();
         String line;
@@ -89,7 +99,6 @@ public class OpenSSHKnownHosts
         }
     }
 
-
     public File getFile() {
         return khFile;
     }
@@ -103,6 +112,28 @@ public class OpenSSHKnownHosts
         }
 
         final String adjustedHostname = (port != 22) ? "[" + hostname + "]:" + port : hostname;
+
+        if (key instanceof Certificate) {
+            boolean ok = false;
+            for (String principal : ((Certificate<?>) key).getValidPrincipals()) {
+                ok = hostname.equals(principal) || adjustedHostname.equals(principal);
+                if (ok) {
+                    break;
+                }
+            }
+            if (!ok) {
+                if (log.isDebugEnabled()) {
+                    StringBuilder joinedPrincipals = new StringBuilder();
+                    String delimiter = "";
+                    for (String principal : ((Certificate<?>) key).getValidPrincipals()) {
+                        joinedPrincipals.append(delimiter).append(principal);
+                        delimiter = ", ";
+                    }
+                    log.debug("Principals [{}] don't match {}:{}", joinedPrincipals, hostname, port);
+                }
+                return false;
+            }
+        }
 
         boolean foundApplicableHostEntry = false;
         for (KnownHostEntry e : entries) {
@@ -139,8 +170,6 @@ public class OpenSSHKnownHosts
         return entries;
     }
 
-    private static final String LS = System.getProperty("line.separator");
-
     public void write()
             throws IOException {
         final BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(khFile));
@@ -162,137 +191,38 @@ public class OpenSSHKnownHosts
             writer.write(entry.getLine());
             writer.newLine();
             writer.flush();
-        }
-        finally {
+        } finally {
             IOUtils.closeQuietly(writer);
         }
     }
 
-    public static File detectSSHDir() {
-        final File sshDir = new File(System.getProperty("user.home"), ".ssh");
-        return sshDir.exists() ? sshDir : null;
+    @Override
+    public String toString() {
+        return "OpenSSHKnownHosts{khFile='" + khFile + "'}";
     }
 
+    public enum Marker {
+        CA_CERT("@cert-authority"),
+        REVOKED("@revoked");
 
-    /**
-     * Each line in these files contains the following fields: markers
-     * (optional), hostnames, bits, exponent, modulus, comment.  The fields are
-     * separated by spaces.
-     * <p/>
-     * The marker is optional, but if it is present then it must be one of
-     * ``@cert-authority'', to indicate that the line contains a certification
-     * authority (CA) key, or ``@revoked'', to indicate that the key contained
-     * on the line is revoked and must not ever be accepted.  Only one marker
-     * should be used on a key line.
-     * <p/>
-     * Hostnames is a comma-separated list of patterns (`*' and `?' act as
-     * wildcards); each pattern in turn is matched against the canonical host
-     * name (when authenticating a client) or against the user-supplied name
-     * (when authenticating a server).  A pattern may also be preceded by `!' to
-     * indicate negation: if the host name matches a negated pattern, it is not
-     * accepted (by that line) even if it matched another pattern on the line.
-     * A hostname or address may optionally be enclosed within `[' and `]'
-     * brackets then followed by `:' and a non-standard port number.
-     * <p/>
-     * Alternately, hostnames may be stored in a hashed form which hides host
-     * names and addresses should the file's contents be disclosed.  Hashed
-     * hostnames start with a `|' character.  Only one hashed hostname may
-     * appear on a single line and none of the above negation or wildcard
-     * operators may be applied.
-     * <p/>
-     * Bits, exponent, and modulus are taken directly from the RSA host key;
-     * they can be obtained, for example, from /etc/ssh/ssh_host_key.pub.  The
-     * optional comment field continues to the end of the line, and is not used.
-     * <p/>
-     * Lines starting with `#' and empty lines are ignored as comments.
-     */
-    public class EntryFactory {
-        public EntryFactory() {
+        private final String sMarker;
+
+        Marker(String sMarker) {
+            this.sMarker = sMarker;
         }
 
-        public KnownHostEntry parseEntry(String line)
-                throws IOException {
-            if (isComment(line)) {
-                return new CommentEntry(line);
-            }
-
-            final String trimmed = line.trim();
-            int minComponents = 3;
-            if (trimmed.startsWith("@")) {
-                minComponents = 4;
-            }
-            String[] split = trimmed.split("\\s+", minComponents + 1); // Add 1 for optional comments
-            if(split.length < minComponents) {
-                log.error("Error reading entry `{}`", line);
-                return new BadHostEntry(line);
-            }
-            int i = 0;
-
-            final Marker marker = Marker.fromString(split[i]);
-            if (marker != null) {
-                i++;
-            }
-            final String hostnames = split[i++];
-            final String sType = split[i++];
-
-            KeyType type = KeyType.fromString(sType);
-            PublicKey key;
-
-            if (type != KeyType.UNKNOWN) {
-                final String sKey = split[i++];
-                try {
-                    byte[] keyBytes = Base64.decode(sKey);
-                    key = new Buffer.PlainBuffer(keyBytes).readPublicKey();
-                } catch (IOException ioe) {
-                    log.warn("Error decoding Base64 key bytes", ioe);
-                    return new BadHostEntry(line);
+        public static Marker fromString(String str) {
+            for (Marker m : values()) {
+                if (m.sMarker.equals(str)) {
+                    return m;
                 }
-            } else if (isBits(sType)) {
-                type = KeyType.RSA;
-                minComponents += 1;
-                // re-split
-                split = trimmed.split("\\s+", minComponents + 1); // Add 1 for optional comments
-                // int bits = Integer.valueOf(sType);
-                final BigInteger e = new BigInteger(split[i++]);
-                final BigInteger n = new BigInteger(split[i++]);
-                try {
-                    final KeyFactory keyFactory = SecurityUtils.getKeyFactory(KeyAlgorithm.RSA);
-                    key = keyFactory.generatePublic(new RSAPublicKeySpec(n, e));
-                } catch (Exception ex) {
-                    log.error("Error reading entry `{}`, could not create key", line, ex);
-                    return new BadHostEntry(line);
-                }
-            } else {
-                log.error("Error reading entry `{}`, could not determine type", line);
-                return new BadHostEntry(line);
             }
-
-            final String comment;
-            if (i < split.length) {
-                comment = split[i++];
-            } else {
-                comment = null;
-            }
-            return new HostEntry(marker, hostnames, type, key, comment);
+            return null;
         }
 
-        private boolean isBits(String type) {
-            try {
-                Integer.parseInt(type);
-                return true;
-            } catch (NumberFormatException e) {
-                return false;
-            }
+        public String getMarkerString() {
+            return sMarker;
         }
-
-        private boolean isComment(String line) {
-            return line.isEmpty() || line.startsWith("#");
-        }
-
-        public boolean isHashed(String line) {
-            return line.startsWith("|1|");
-        }
-
     }
 
     public interface KnownHostEntry {
@@ -350,10 +280,11 @@ public class OpenSSHKnownHosts
 
     public static class HostEntry implements KnownHostEntry {
 
-        final OpenSSHKnownHosts.Marker marker;
-        private final String hostPart;
         protected final KeyType type;
         protected final PublicKey key;
+        protected final Logger log;
+        final OpenSSHKnownHosts.Marker marker;
+        private final String hostPart;
         private final String comment;
         private final KnownHostMatchers.HostMatcher matcher;
 
@@ -362,11 +293,16 @@ public class OpenSSHKnownHosts
         }
 
         public HostEntry(Marker marker, String hostPart, KeyType type, PublicKey key, String comment) throws SSHException {
+            this(marker, hostPart, type, key, comment, LoggerFactory.DEFAULT);
+        }
+
+        public HostEntry(Marker marker, String hostPart, KeyType type, PublicKey key, String comment, LoggerFactory loggerFactory) throws SSHException {
             this.marker = marker;
             this.hostPart = hostPart;
             this.type = type;
             this.key = key;
             this.comment = comment;
+            log = loggerFactory.getLogger(getClass());
             this.matcher = KnownHostMatchers.createMatcher(hostPart);
         }
 
@@ -387,22 +323,94 @@ public class OpenSSHKnownHosts
 
         @Override
         public boolean appliesTo(KeyType type, String host) throws IOException {
-            // TODO better check for certificates.
-            return (this.type == type || (marker == Marker.CA_CERT && type.getParent() != null)) && matcher.match(host);
+            return (this.type == type || (marker == Marker.CA_CERT && type.getParent() == this.type)) && matcher.match(host);
         }
 
         @Override
         public boolean verify(PublicKey key) throws IOException {
-            if (marker == Marker.CA_CERT && key instanceof Certificate<?>) {
-                try {
-                    final Signature signature = Signature.getInstance(this.key.getAlgorithm());
-                    signature.initVerify(this.key);
-                    signature.verify(((Certificate<?>) key).getSignature());
-                    return true;
-                }
-                catch (GeneralSecurityException e) {
-                    return false;
-                }
+            if (marker == Marker.CA_CERT && key instanceof Certificate<?> && key.getAlgorithm().equals(this.key.getAlgorithm())) {
+//                    ((Certificate<?>) key).getSignatureKey().length == this.key.getEncoded().length &&
+//                    ByteArrayUtils.equals(((Certificate<?>) key).getSignatureKey(), 0,
+//                                          this.key.getEncoded(), 0, this.key.getEncoded().length)) {
+
+                return true;
+
+
+//                try {
+//                    // See sshkey_cert_check_authority, sshkey_check_cert_sigtype in OpenSSH.
+//                    // TODO wildcard_principals
+//                    PublicKey signatureKey = new Buffer.PlainBuffer(((Certificate<?>) key).getSignatureKey()).readPublicKey();
+//
+//                    if (!getKeyString(signatureKey).equals(getKeyString(this.key))) {
+//                        return false;
+//                    }
+//
+//                    final Buffer.PlainBuffer signatureBuffer = new Buffer.PlainBuffer(((Certificate<?>) key).getSignature());
+//                    String signatureType = signatureBuffer.readString();
+//
+//                    final String javaSignatureAlgo;
+//                    switch (signatureType) {
+//                        case "rsa-sha2-512":
+//                            javaSignatureAlgo = "SHA512withRSA";
+//                            break;
+//                        default:
+//                            return false;
+//                    }
+//
+//                    final Signature signature = Signature.getInstance(javaSignatureAlgo);
+//                    signature.initVerify(this.key);
+//
+//                    final Buffer<?> buf = new Buffer.PlainBuffer();
+//                    Certificate<PublicKey> certificate = (Certificate<PublicKey>) key;
+//                    buf.putString(KeyType.fromKey(key).toString());
+//                    buf.putString(new Buffer.PlainBuffer().putPublicKey(key).getCompactData());
+//                    //buf.putBytes(certificate.getNonce());
+//                    type.writePubKeyContentsIntoBuffer(certificate.getKey(), buf);
+//                    buf.putUInt64(certificate.getSerial())
+//                            .putUInt32(certificate.getType())
+//                            .putString(certificate.getId())
+//                            .putBytes(packList(certificate.getValidPrincipals()))
+//                            .putUInt64(epochFromDate(certificate.getValidAfter()))
+//                            .putUInt64(epochFromDate(certificate.getValidBefore()))
+//                            .putBytes(packMap(certificate.getCritOptions()))
+//                            .putBytes(packMap(certificate.getExtensions()))
+//                            .putString("") // reserved
+//                            .putBytes(certificate.getSignatureKey());
+//
+//                    signature.update(buf.array(), buf.rpos(), buf.available());
+//                    final boolean verify = signature.verify(signatureBuffer.array(), signatureBuffer.rpos(), signatureBuffer.available() - 4);
+//                    return verify;
+////
+////                    Signature signature;
+////                    switch (type) {
+////                        case RSA:
+////                            signature = new SignatureRSA.FactorySSHRSA().create();
+////                            break;
+////                        default:
+////                            throw new UnsupportedEncodingException();
+////                    }
+////
+////                    signature.initVerify(this.key);
+////                    final Buffer<?> buf = KeyType.CertUtils.getBufferForSignatureVerify(key, this.type);
+////                    signature.update(buf.array(), buf.rpos(), buf.available());
+////                    signature.verify(((Certificate<?>) key).getSignature());
+//                } catch (GeneralSecurityException | SSHRuntimeException | Buffer.BufferException err) {
+//                    log.debug("Failed to verify key with type {}", this.key.getAlgorithm(), err);
+//                    return false;
+//                }
+
+//                try {
+//                    final Signature signature = Signature.getInstance(this.key.getAlgorithm());
+//                    signature.initVerify(this.key);
+//                    final Buffer<?> buf = KeyType.CertUtils.getBufferForSignatureVerify(key, this.type);
+//                    signature.update(buf.array(), 0, buf.available());
+//                    signature.verify(((Certificate<?>) key).getSignature());
+//                    return true;
+//                }
+//                catch (GeneralSecurityException e) {
+//                    log.debug("Failed to verify key with type {}", this.key.getAlgorithm(), e);
+//                    return false;
+//                }
             }
             return getKeyString(key).equals(getKeyString(this.key)) && marker != Marker.REVOKED;
         }
@@ -473,33 +481,125 @@ public class OpenSSHKnownHosts
         }
     }
 
-    public enum Marker {
-        CA_CERT("@cert-authority"),
-        REVOKED("@revoked");
-
-        private final String sMarker;
-
-        Marker(String sMarker) {
-            this.sMarker = sMarker;
+    /**
+     * Each line in these files contains the following fields: markers
+     * (optional), hostnames, bits, exponent, modulus, comment.  The fields are
+     * separated by spaces.
+     * <p/>
+     * The marker is optional, but if it is present then it must be one of
+     * ``@cert-authority'', to indicate that the line contains a certification
+     * authority (CA) key, or ``@revoked'', to indicate that the key contained
+     * on the line is revoked and must not ever be accepted.  Only one marker
+     * should be used on a key line.
+     * <p/>
+     * Hostnames is a comma-separated list of patterns (`*' and `?' act as
+     * wildcards); each pattern in turn is matched against the canonical host
+     * name (when authenticating a client) or against the user-supplied name
+     * (when authenticating a server).  A pattern may also be preceded by `!' to
+     * indicate negation: if the host name matches a negated pattern, it is not
+     * accepted (by that line) even if it matched another pattern on the line.
+     * A hostname or address may optionally be enclosed within `[' and `]'
+     * brackets then followed by `:' and a non-standard port number.
+     * <p/>
+     * Alternately, hostnames may be stored in a hashed form which hides host
+     * names and addresses should the file's contents be disclosed.  Hashed
+     * hostnames start with a `|' character.  Only one hashed hostname may
+     * appear on a single line and none of the above negation or wildcard
+     * operators may be applied.
+     * <p/>
+     * Bits, exponent, and modulus are taken directly from the RSA host key;
+     * they can be obtained, for example, from /etc/ssh/ssh_host_key.pub.  The
+     * optional comment field continues to the end of the line, and is not used.
+     * <p/>
+     * Lines starting with `#' and empty lines are ignored as comments.
+     */
+    public class EntryFactory {
+        public EntryFactory() {
         }
 
-        public String getMarkerString() {
-            return sMarker;
-        }
-
-        public static Marker fromString(String str) {
-            for (Marker m: values()) {
-                if (m.sMarker.equals(str)) {
-                    return m;
-                }
+        public KnownHostEntry parseEntry(String line)
+                throws IOException {
+            if (isComment(line)) {
+                return new CommentEntry(line);
             }
-            return null;
-        }
-    }
 
-    @Override
-    public String toString() {
-        return "OpenSSHKnownHosts{khFile='" + khFile + "'}";
+            final String trimmed = line.trim();
+            int minComponents = 3;
+            if (trimmed.startsWith("@")) {
+                minComponents = 4;
+            }
+            String[] split = trimmed.split("\\s+", minComponents + 1); // Add 1 for optional comments
+            if (split.length < minComponents) {
+                log.error("Error reading entry `{}`", line);
+                return new BadHostEntry(line);
+            }
+            int i = 0;
+
+            final Marker marker = Marker.fromString(split[i]);
+            if (marker != null) {
+                i++;
+            }
+            final String hostnames = split[i++];
+            final String sType = split[i++];
+
+            KeyType type = KeyType.fromString(sType);
+            PublicKey key;
+
+            if (type != KeyType.UNKNOWN) {
+                final String sKey = split[i++];
+                try {
+                    byte[] keyBytes = Base64.decode(sKey);
+                    key = new Buffer.PlainBuffer(keyBytes).readPublicKey();
+                } catch (IOException ioe) {
+                    log.warn("Error decoding Base64 key bytes", ioe);
+                    return new BadHostEntry(line);
+                }
+            } else if (isBits(sType)) {
+                type = KeyType.RSA;
+                minComponents += 1;
+                // re-split
+                split = trimmed.split("\\s+", minComponents + 1); // Add 1 for optional comments
+                // int bits = Integer.valueOf(sType);
+                final BigInteger e = new BigInteger(split[i++]);
+                final BigInteger n = new BigInteger(split[i++]);
+                try {
+                    final KeyFactory keyFactory = SecurityUtils.getKeyFactory(KeyAlgorithm.RSA);
+                    key = keyFactory.generatePublic(new RSAPublicKeySpec(n, e));
+                } catch (Exception ex) {
+                    log.error("Error reading entry `{}`, could not create key", line, ex);
+                    return new BadHostEntry(line);
+                }
+            } else {
+                log.error("Error reading entry `{}`, could not determine type", line);
+                return new BadHostEntry(line);
+            }
+
+            final String comment;
+            if (i < split.length) {
+                comment = split[i++];
+            } else {
+                comment = null;
+            }
+            return new HostEntry(marker, hostnames, type, key, comment);
+        }
+
+        private boolean isBits(String type) {
+            try {
+                Integer.parseInt(type);
+                return true;
+            } catch (NumberFormatException e) {
+                return false;
+            }
+        }
+
+        private boolean isComment(String line) {
+            return line.isEmpty() || line.startsWith("#");
+        }
+
+        public boolean isHashed(String line) {
+            return line.startsWith("|1|");
+        }
+
     }
 
 }

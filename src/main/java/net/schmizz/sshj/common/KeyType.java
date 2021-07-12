@@ -17,12 +17,17 @@ package net.schmizz.sshj.common;
 
 import com.hierynomus.sshj.common.KeyAlgorithm;
 import com.hierynomus.sshj.signature.Ed25519PublicKey;
+import com.hierynomus.sshj.signature.SignatureEdDSA;
 import com.hierynomus.sshj.userauth.certificate.Certificate;
 import net.i2p.crypto.eddsa.EdDSAPublicKey;
 import net.i2p.crypto.eddsa.spec.EdDSANamedCurveSpec;
 import net.i2p.crypto.eddsa.spec.EdDSANamedCurveTable;
 import net.i2p.crypto.eddsa.spec.EdDSAPublicKeySpec;
 import net.schmizz.sshj.common.Buffer.BufferException;
+import net.schmizz.sshj.signature.Signature;
+import net.schmizz.sshj.signature.SignatureDSA;
+import net.schmizz.sshj.signature.SignatureECDSA;
+import net.schmizz.sshj.signature.SignatureRSA;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -57,7 +62,7 @@ public enum KeyType {
         }
 
         @Override
-        protected void writePubKeyContentsIntoBuffer(PublicKey pk, Buffer<?> buf) {
+        public void writePubKeyContentsIntoBuffer(PublicKey pk, Buffer<?> buf) {
             final RSAPublicKey rsaKey = (RSAPublicKey) pk;
             buf.putMPInt(rsaKey.getPublicExponent()) // e
                 .putMPInt(rsaKey.getModulus()); // n
@@ -88,7 +93,7 @@ public enum KeyType {
         }
 
         @Override
-        protected void writePubKeyContentsIntoBuffer(PublicKey pk, Buffer<?> buf) {
+        public void writePubKeyContentsIntoBuffer(PublicKey pk, Buffer<?> buf) {
             final DSAPublicKey dsaKey = (DSAPublicKey) pk;
             buf.putMPInt(dsaKey.getParams().getP()) // p
                 .putMPInt(dsaKey.getParams().getQ()) // q
@@ -114,7 +119,7 @@ public enum KeyType {
 
 
         @Override
-        protected void writePubKeyContentsIntoBuffer(PublicKey pk, Buffer<?> buf) {
+        public void writePubKeyContentsIntoBuffer(PublicKey pk, Buffer<?> buf) {
             ECDSAVariationsAdapter.writePubKeyContentsIntoBuffer(pk, buf);
         }
 
@@ -135,7 +140,7 @@ public enum KeyType {
 
 
         @Override
-        protected void writePubKeyContentsIntoBuffer(PublicKey pk, Buffer<?> buf) {
+        public void writePubKeyContentsIntoBuffer(PublicKey pk, Buffer<?> buf) {
             ECDSAVariationsAdapter.writePubKeyContentsIntoBuffer(pk, buf);
         }
 
@@ -156,7 +161,7 @@ public enum KeyType {
 
 
         @Override
-        protected void writePubKeyContentsIntoBuffer(PublicKey pk, Buffer<?> buf) {
+        public void writePubKeyContentsIntoBuffer(PublicKey pk, Buffer<?> buf) {
             ECDSAVariationsAdapter.writePubKeyContentsIntoBuffer(pk, buf);
         }
 
@@ -192,7 +197,7 @@ public enum KeyType {
         }
 
         @Override
-        protected void writePubKeyContentsIntoBuffer(PublicKey pk, Buffer<?> buf) {
+        public void writePubKeyContentsIntoBuffer(PublicKey pk, Buffer<?> buf) {
             EdDSAPublicKey key = (EdDSAPublicKey) pk;
             buf.putBytes(key.getAbyte());
         }
@@ -212,7 +217,7 @@ public enum KeyType {
         }
 
         @Override
-        protected void writePubKeyContentsIntoBuffer(PublicKey pk, Buffer<?> buf) {
+        public void writePubKeyContentsIntoBuffer(PublicKey pk, Buffer<?> buf) {
             CertUtils.writePubKeyContentsIntoBuffer(pk, RSA, buf);
         }
 
@@ -236,7 +241,7 @@ public enum KeyType {
         }
 
         @Override
-        protected void writePubKeyContentsIntoBuffer(PublicKey pk, Buffer<?> buf) {
+        public void writePubKeyContentsIntoBuffer(PublicKey pk, Buffer<?> buf) {
             CertUtils.writePubKeyContentsIntoBuffer(pk, DSA, buf);
         }
 
@@ -259,7 +264,7 @@ public enum KeyType {
         }
 
         @Override
-        protected void writePubKeyContentsIntoBuffer(PublicKey pk, Buffer<?> buf) {
+        public void writePubKeyContentsIntoBuffer(PublicKey pk, Buffer<?> buf) {
             CertUtils.writePubKeyContentsIntoBuffer(pk, ED25519, buf);
         }
 
@@ -282,7 +287,7 @@ public enum KeyType {
         }
 
         @Override
-        protected void writePubKeyContentsIntoBuffer(PublicKey pk, Buffer<?> buf) {
+        public void writePubKeyContentsIntoBuffer(PublicKey pk, Buffer<?> buf) {
             CertUtils.writePubKeyContentsIntoBuffer(pk, ECDSA256, buf);
         }
 
@@ -305,7 +310,7 @@ public enum KeyType {
         }
 
         @Override
-        protected void writePubKeyContentsIntoBuffer(PublicKey pk, Buffer<?> buf) {
+        public void writePubKeyContentsIntoBuffer(PublicKey pk, Buffer<?> buf) {
             CertUtils.writePubKeyContentsIntoBuffer(pk, ECDSA384, buf);
         }
 
@@ -328,7 +333,7 @@ public enum KeyType {
         }
 
         @Override
-        protected void writePubKeyContentsIntoBuffer(PublicKey pk, Buffer<?> buf) {
+        public void writePubKeyContentsIntoBuffer(PublicKey pk, Buffer<?> buf) {
             CertUtils.writePubKeyContentsIntoBuffer(pk, ECDSA521, buf);
         }
 
@@ -357,7 +362,7 @@ public enum KeyType {
         }
 
         @Override
-        protected void writePubKeyContentsIntoBuffer(PublicKey pk, Buffer<?> buf) {
+        public void writePubKeyContentsIntoBuffer(PublicKey pk, Buffer<?> buf) {
             throw new UnsupportedOperationException("Don't know how to encode key: " + pk);
         }
 
@@ -376,7 +381,7 @@ public enum KeyType {
     public abstract PublicKey readPubKeyFromBuffer(Buffer<?> buf)
             throws GeneralSecurityException;
 
-    protected abstract void writePubKeyContentsIntoBuffer(PublicKey pk, Buffer<?> buf);
+    public abstract void writePubKeyContentsIntoBuffer(PublicKey pk, Buffer<?> buf);
 
     public void putPubKeyIntoBuffer(PublicKey pk, Buffer<?> buf) {
         writePubKeyContentsIntoBuffer(pk, buf.putString(sType));
@@ -417,7 +422,7 @@ public enum KeyType {
         return sType;
     }
 
-    static class CertUtils {
+    public static class CertUtils {
 
         @SuppressWarnings("unchecked")
         static <T extends PublicKey> Certificate<T> readPubKey(Buffer<?> buf, KeyType innerKeyType) throws GeneralSecurityException {
@@ -444,7 +449,18 @@ public enum KeyType {
             return builder.build();
         }
 
+        public static Buffer<?> getBufferForSignatureVerify(PublicKey certificate, KeyType innerKeyType) {
+            Buffer<?> buf = new Buffer.PlainBuffer();
+            writePubKeyContentsIntoBuffer(certificate, innerKeyType, buf, false);
+            return buf;
+        }
+
         static void writePubKeyContentsIntoBuffer(PublicKey publicKey, KeyType innerKeyType, Buffer<?> buf) {
+            writePubKeyContentsIntoBuffer(publicKey, innerKeyType, buf, true);
+        }
+
+        private static void writePubKeyContentsIntoBuffer(
+                PublicKey publicKey, KeyType innerKeyType, Buffer<?> buf, boolean putSignature) {
             Certificate<PublicKey> certificate = toCertificate(publicKey);
             buf.putBytes(certificate.getNonce());
             innerKeyType.writePubKeyContentsIntoBuffer(certificate.getKey(), buf);
@@ -457,9 +473,68 @@ public enum KeyType {
                 .putBytes(packMap(certificate.getCritOptions()))
                 .putBytes(packMap(certificate.getExtensions()))
                 .putString("") // reserved
-                .putBytes(certificate.getSignatureKey())
-                .putBytes(certificate.getSignature());
+                .putBytes(certificate.getSignatureKey());
+
+            if (putSignature) {
+                buf.putBytes(certificate.getSignature());
+            }
         }
+
+        /**
+         * TODO
+         * @param certRaw
+         * @param cert
+         * @return
+         * @throws Buffer.BufferException
+         * @throws GeneralSecurityException
+         */
+        public static boolean verifyHostCertificate(byte[] certRaw, Certificate<?> cert)
+                throws Buffer.BufferException, SSHRuntimeException {
+            final Buffer.PlainBuffer signatureBuffer = new Buffer.PlainBuffer(cert.getSignature());
+            String signatureType = signatureBuffer.readString();
+
+            final Signature signature = Factory.Named.Util.create(ALL_SIGNATURES, signatureType);
+            if (signature == null) {
+                return false;
+            }
+
+            // TODO Check certificate fields like time, principals, etc. here.
+
+            signature.initVerify(new Buffer.PlainBuffer(cert.getSignatureKey()).readPublicKey());
+            signature.update(certRaw, 0, certRaw.length - cert.getSignature().length - 4);
+            return signature.verify(signatureBuffer.readBytes());
+
+//            final String javaSignatureAlgo;
+//            switch (signatureType) {
+//                case "rsa-sha2-512":
+//                    javaSignatureAlgo = "SHA512withRSA";
+//                    break;
+//                default:
+//                    return false;
+//            }
+//
+//            final java.security.Signature certSignature = java.security.Signature.getInstance(javaSignatureAlgo);
+//            certSignature.initVerify(new Buffer.PlainBuffer(cert.getSignatureKey()).readPublicKey());
+//            certSignature.update(certRaw, 0, certRaw.length - cert.getSignature().length - 4);
+//            return certSignature.verify(signatureBuffer.readBytes());
+        }
+
+        // TODO Unit test of completeness.
+        public static final List<Factory.Named<Signature>> ALL_SIGNATURES = Arrays.asList(
+                new SignatureRSA.FactorySSHRSA(),
+                new SignatureRSA.FactoryCERT(),
+                new SignatureRSA.FactoryRSASHA256(),
+                new SignatureRSA.FactoryRSASHA512(),
+                new SignatureDSA.Factory(),
+                new SignatureDSA.Factory(),
+                new SignatureECDSA.Factory256(),
+                new SignatureECDSA.Factory256(),
+                new SignatureECDSA.Factory384(),
+                new SignatureECDSA.Factory384(),
+                new SignatureECDSA.Factory521(),
+                new SignatureECDSA.Factory521(),
+                new SignatureEdDSA.Factory(),
+                new SignatureEdDSA.Factory());
 
         static boolean isCertificateOfType(Key key, KeyType innerKeyType) {
             if (!(key instanceof Certificate)) {
@@ -479,7 +554,7 @@ public enum KeyType {
             return ((Certificate<PublicKey>) key);
         }
 
-        private static Date dateFromEpoch(BigInteger seconds) {
+        public static Date dateFromEpoch(BigInteger seconds) {
             BigInteger maxValue = BigInteger.valueOf(Long.MAX_VALUE / 1000);
             if (seconds.compareTo(maxValue) > 0) {
                 return new Date(maxValue.longValue() * 1000);
@@ -488,7 +563,7 @@ public enum KeyType {
             }
         }
 
-        private static BigInteger epochFromDate(Date date) {
+        public static BigInteger epochFromDate(Date date) {
             long time = date.getTime() / 1000;
             if (time >= Long.MAX_VALUE / 1000) {
                 // Dealing with the signed longs in Java. Since the protocol requires a unix timestamp in milliseconds,
@@ -509,7 +584,7 @@ public enum KeyType {
             return new Buffer.PlainBuffer(packedString).readString();
         }
 
-        private static List<String> unpackList(byte[] packedString) throws BufferException {
+        public static List<String> unpackList(byte[] packedString) throws BufferException {
             List<String> list = new ArrayList<String>();
             Buffer<?> buf = new Buffer.PlainBuffer(packedString);
             while (buf.available() > 0) {
@@ -518,7 +593,7 @@ public enum KeyType {
             return list;
         }
 
-        private static Map<String, String> unpackMap(byte[] packedString) throws BufferException {
+        public static Map<String, String> unpackMap(byte[] packedString) throws BufferException {
             Map<String, String> map = new LinkedHashMap<String, String>();
             Buffer<?> buf = new Buffer.PlainBuffer(packedString);
             while (buf.available() > 0) {
@@ -536,7 +611,7 @@ public enum KeyType {
             return new Buffer.PlainBuffer().putString(data).getCompactData();
         }
 
-        private static byte[] packList(Iterable<String> strings) {
+        public static byte[] packList(Iterable<String> strings) {
             Buffer<?> buf = new Buffer.PlainBuffer();
             for (String string : strings) {
                 buf.putString(string);
@@ -544,7 +619,7 @@ public enum KeyType {
             return buf.getCompactData();
         }
 
-        private static byte[] packMap(Map<String, String> map) {
+        public static byte[] packMap(Map<String, String> map) {
             Buffer<?> buf = new Buffer.PlainBuffer();
             List<String> keys = new ArrayList<String>(map.keySet());
             Collections.sort(keys);

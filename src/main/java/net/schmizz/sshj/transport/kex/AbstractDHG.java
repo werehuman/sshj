@@ -90,6 +90,19 @@ public abstract class AbstractDHG extends AbstractDH {
         if (!signature.verify(sig))
             throw new TransportException(DisconnectReason.KEY_EXCHANGE_FAILED,
                                          "KeyExchange signature verification failed");
+
+        if (hostKey instanceof Certificate<?>) {
+            // TODO log types, signature algorithms, etc.
+            try {
+                if (!KeyType.CertUtils.verifyHostCertificate(K_S, (Certificate<?>) hostKey)) {
+                    throw new TransportException(DisconnectReason.KEY_EXCHANGE_FAILED,
+                                                 "KeyExchange certificate signature verification failed");
+                }
+            } catch (Buffer.BufferException | SSHRuntimeException e) {
+                throw new TransportException(DisconnectReason.KEY_EXCHANGE_FAILED,
+                                             "KeyExchange certificate signature verification failed", e);
+            }
+        }
         return true;
     }
 

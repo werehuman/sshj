@@ -41,16 +41,26 @@ for ca_algo in ecdsa rsa ed25519; do
       user_key="resources/keyfiles/certificates/id_${key_algo_pair}_${format}_signed_by_${ca_algo}"
       generate "$user_key" -N '' -t "$key_algo" -b "$bits" -m "$format" -C "$(basename "$user_key")"
       generate "${user_key}-cert.pub" -s "resources/keyfiles/certificates/CA_${ca_algo}.pem" -I "$(basename "$user_key")" -n sshj "${user_key}.pub"
+
+      # These certificates are to be used as host certificates of sshd.
+      cp "${user_key}" "${user_key}_host"
+      cp "${user_key}.pub" "${user_key}_host.pub"
+      generate "${user_key}_host-cert.pub" -s "resources/keyfiles/certificates/CA_${ca_algo}.pem" -I "$(basename "$user_key")" -h -n 127.0.0.1 "${user_key}_host.pub"
+      rm -f "${user_key}_host"
+      rm -f "${user_key}_host.pub"
     done
   done
 done
+
+mkdir -p docker-image/test-container/host_keys
 
 for key_algo_pair in "${key_algo_pairs[@]}"; do
   key_algo="${key_algo_pair/_*/}"
   bits="${key_algo_pair/*_/}"
 
+  user_key="resources/keyfiles/certificates/id_${key_algo_pair}_${format}_signed_by_rsa"
   host_key="docker-image/test-container/host_keys/ssh_host_${key_algo_pair}_key"
-  generate "$host_key" -N '' -t "$key_algo" -b "$bits" -C "$(basename "$host_key")"
-  # TODO Check hostname on the client side.
-  generate "${host_key}-cert.pub" -h -s "resources/keyfiles/certificates/CA_rsa.pem" -I "$(basename "$host_key")" -n sshj "${host_key}.pub"
+  cp -p "$user_key" "$host_key"
+  cp -p "${user_key}.pub" "${host_key}.pub"
+  cp -p "${user_key}_host-cert.pub" "${host_key}-cert.pub"
 done
